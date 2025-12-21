@@ -1,31 +1,32 @@
 from flask import Flask, render_template_string, request, session, redirect
-import os
-import sqlite3
-import requests
+import os, sqlite3, requests
 from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = 'clave_maestra_trading_pro_2025'
+app.secret_key = 'clave_maestra_trading_quantum_2025'
 
-# --- CONFIGURACIÓN DE TU WHATSAPP (CON CÓDIGO 58 ANEXADO) ---
-NUMERO_CELULAR = "584165696847" 
-API_KEY_WHA = "ESCRIBE_AQUI_TU_CODIGO" # <--- ¡PON AQUÍ TU CÓDIGO DE 6 DÍGITOS!
+# --- CONFIGURACIÓN GLOBAL ---
+NUMERO_CELULAR = "584165696847"
+API_KEY_WHA = "ESCRIBE_AQUI_TU_CODIGO_DE_6_DIGITOS" # Reemplaza esto cuando el bot te responda
 
-def enviar_alerta_pago(usuario, monto, ref):
-    mensaje = f"🚀 *Trading Pro: NUEVO PAGO*\n\n👤 Usuario: {usuario}\n💰 Monto: {monto} USDT\n🔢 Ref: {ref}\n\n⚠️ Verifique su banco antes de confirmar."
+def enviar_alerta_whatsapp(mensaje):
+    if API_KEY_WHA == "ESCRIBE_AQUI_TU_CODIGO_DE_6_DIGITOS" or API_KEY_WHA == "PENDIENTE":
+        print(f"Log: {mensaje} (WhatsApp no configurado)")
+        return
     url = f"https://api.callmebot.com/whatsapp.php?phone={NUMERO_CELULAR}&text={mensaje}&apikey={API_KEY_WHA}"
-    try:
-        requests.get(url)
-    except:
-        print("Error enviando alerta de WhatsApp")
+    try: requests.get(url)
+    except: print("Error de conexión con WhatsApp")
 
-# --- BASE DE DATOS ---
+# --- GESTIÓN DE BASE DE DATOS ---
 def init_db():
     conn = sqlite3.connect('datos.db')
     cursor = conn.cursor()
+    # Tabla de usuarios con billetera y autoridad de bot
+    cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios 
+                      (id INTEGER PRIMARY KEY, email TEXT, saldo REAL, bot_autoridad INTEGER)''')
+    # Tabla de depósitos para auditoría legal
     cursor.execute('''CREATE TABLE IF NOT EXISTS depositos 
-                      (id INTEGER PRIMARY KEY, usuario TEXT, monto REAL, ref TEXT, 
-                       estado TEXT, fecha TEXT, auditoria TEXT)''')
+                      (id INTEGER PRIMARY KEY, usuario TEXT, monto REAL, ref TEXT, estado TEXT, fecha TEXT)''')
     conn.commit()
     conn.close()
 
@@ -33,18 +34,31 @@ init_db()
 
 @app.route('/')
 def index():
-    if 'user' not in session:
-        return render_template_string(LOGIN_HTML)
-    return render_template_string(DASHBOARD_HTML, user=session['user'])
+    if 'user' not in session: return render_template_string(LOGIN_HTML)
+    
+    conn = sqlite3.connect('datos.db')
+    user_data = conn.execute("SELECT saldo, bot_autoridad FROM usuarios WHERE email=?", (session['user'],)).fetchone()
+    conn.close()
+    
+    saldo = user_data[0] if user_data else 0.0
+    
+    # REGLA DE ORO: El bot necesita $2 para despertar
+    bot_activo = saldo >= 2.0
+    estado_texto = "SISTEMA ACTIVO" if bot_activo else "BOT APAGADO (Saldo < $2)"
+    estado_color = "#3fb950" if bot_activo else "#f85149"
+    
+    return render_template_string(DASHBOARD_HTML, user=session['user'], saldo=saldo, estado_texto=estado_texto, estado_color=estado_color)
 
 @app.route('/login', methods=['POST'])
 def login():
-    session['user'] = request.form['email']
-    return redirect('/')
-
-@app.route('/logout')
-def logout():
-    session.pop('user', None)
+    email = request.form['email']
+    session['user'] = email
+    conn = sqlite3.connect('datos.db')
+    # Si es nuevo, le damos un bono de $5 para que vea el bot activo de una vez
+    if not conn.execute("SELECT email FROM usuarios WHERE email=?", (email,)).fetchone():
+        conn.execute("INSERT INTO usuarios (email, saldo, bot_autoridad) VALUES (?, 5.0, 1)", (email,))
+        conn.commit()
+    conn.close()
     return redirect('/')
 
 @app.route('/notificar', methods=['POST'])
@@ -52,96 +66,74 @@ def notificar():
     if 'user' not in session: return redirect('/')
     monto = request.form.get('monto')
     ref = request.form.get('ref')
-    user = session['user']
+    fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
     
-    # ENVIAR ALERTA A TU CELULAR
-    enviar_alerta_pago(user, monto, ref)
-    
-    # GUARDAR EN BASE DE DATOS
     conn = sqlite3.connect('datos.db')
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO depositos (usuario, monto, ref, estado, fecha, auditoria) VALUES (?,?,?,?,?,?)",
-                   (user, monto, ref, 'Pendiente', datetime.now().strftime("%Y-%m-%d %H:%M"), "AUDITORÍA OK"))
+    conn.execute("INSERT INTO depositos (usuario, monto, ref, estado, fecha) VALUES (?,?,?,?,?)",
+                 (session['user'], monto, ref, 'Pendiente', fecha))
     conn.commit()
     conn.close()
-    return "<h1>Notificación enviada con éxito. Revisaremos su pago.</h1><a href='/'>Volver</a>"
+    
+    enviar_alerta_whatsapp(f"🚀 *NUEVO DEPÓSITO:* {monto} USDT de {session['user']}. Ref: {ref}")
+    return "<h1>Notificación enviada al Asistente Legal.</h1><a href='/'>Volver</a>"
 
-# --- INTERFAZ VISUAL ---
+# --- INTERFACES VISUALES (APP MÓVIL) ---
 LOGIN_HTML = '''
-<body style="background:#010409; color:white; font-family:sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; margin:0;">
-    <div style="background:#0d1117; padding:40px; border-radius:15px; border:1px solid #30363d; text-align:center; width:300px;">
-        <h2 style="color:#58a6ff;">Trading Pro Terminal</h2>
+<body style="background:#010409; color:white; font-family:sans-serif; text-align:center; padding-top:80px;">
+    <h1 style="color:#58a6ff;">QUANTUM AI <br><small style="color:gray;">Trading Terminal</small></h1>
+    <div style="background:#0d1117; padding:30px; border-radius:20px; border:1px solid #30363d; display:inline-block; width:80%;">
         <form action="/login" method="POST">
-            <input name="email" type="email" placeholder="Correo Electrónico" required style="width:100%; padding:12px; margin:10px 0; background:#010409; border:1px solid #30363d; color:white; border-radius:5px;">
-            <button style="width:100%; padding:12px; background:#238636; color:white; border:none; border-radius:5px; cursor:pointer; font-weight:bold;">INGRESAR</button>
+            <input name="email" type="email" placeholder="Usuario / Email" required style="width:90%; padding:15px; margin-bottom:15px; background:#010409; color:white; border:1px solid #30363d; border-radius:10px;">
+            <button style="width:100%; padding:15px; background:#238636; color:white; border:none; border-radius:10px; font-weight:bold; cursor:pointer;">INICIAR ALGORITMO</button>
         </form>
     </div>
-</body>
-'''
+</body>'''
 
 DASHBOARD_HTML = '''
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-    <title>Trading Pro | Live</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        body { background:#010409; color:#c9d1d9; font-family:sans-serif; margin:0; display:grid; grid-template-rows: 60px 1fr; height:100vh; }
-        .nav { background:#161b22; border-bottom:1px solid #30363d; display:flex; justify-content:space-between; align-items:center; padding:0 25px; }
-        .main { display:grid; grid-template-columns: 280px 1fr 320px; gap:10px; padding:10px; overflow:hidden; }
-        .panel { background:#0d1117; border:1px solid #30363d; border-radius:10px; padding:15px; }
-        #btc-price { font-size: 22px; font-weight: bold; }
-        .up { color: #3fb950; } .down { color: #f85149; }
+        body { background:#010409; color:#c9d1d9; font-family:sans-serif; margin:0; padding:15px; }
+        .card { background:#0d1117; border:1px solid #30363d; border-radius:15px; padding:20px; margin-bottom:15px; }
+        .bot-status { background:{{estado_color}}; color:white; padding:5px 12px; border-radius:20px; font-size:12px; font-weight:bold; }
+        input { width:100%; padding:12px; background:#010409; color:white; border:1px solid #30363d; border-radius:8px; margin-bottom:10px; box-sizing:border-box; }
+        button { width:100%; padding:12px; background:#238636; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; }
     </style>
 </head>
 <body>
-    <div class="nav">
-        <div style="font-size:20px; font-weight:bold; color:#58a6ff;"><i class="fas fa-microchip"></i> QUANTUM AI</div>
-        <div>{{ user }} | <a href="/logout" style="color:#f85149; text-decoration:none;">Salir</a></div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+        <b style="color:#58a6ff; font-size:18px;"><i class="fas fa-brain"></i> Quantum AI</b>
+        <span class="bot-status">{{estado_texto}}</span>
     </div>
-    <div class="main">
-        <div class="panel">
-            <h4><i class="fas fa-satellite-dish"></i> Algoritmo</h4>
-            <div id="btc-price">$--.--</div>
-            <div id="signal-text" style="margin-top:10px; font-weight:bold;">Cargando...</div>
-        </div>
-        <div class="panel" style="padding:0;">
-            <div id="tradingview_widget" style="height:100%;"></div>
-            <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-            <script type="text/javascript">
-              new TradingView.widget({"autosize": true, "symbol": "BINANCE:BTCUSDT", "interval": "1", "theme": "dark", "container_id": "tradingview_widget"});
-            </script>
-        </div>
-        <div class="panel">
-            <h4><i class="fas fa-wallet"></i> Billetera</h4>
-            <div style="font-size:24px; color:#3fb950; font-weight:bold;">$1,250.00 USDT</div>
-            <hr style="border:0.5px solid #30363d; margin:20px 0;">
-            <form action="/notificar" method="POST">
-                <input name="monto" type="number" placeholder="Monto USDT" required style="width:100%; padding:10px; background:#010409; border:1px solid #30363d; color:white; margin-bottom:10px;">
-                <input name="ref" type="text" placeholder="Ref. Bancaria" required style="width:100%; padding:10px; background:#010409; border:1px solid #30363d; color:white; margin-bottom:10px;">
-                <button style="width:100%; padding:10px; background:#238636; color:white; border:none; cursor:pointer;">CONFIRMAR PAGO</button>
-            </form>
+
+    <div class="card" style="text-align:center;">
+        <p style="color:gray; margin:0;">Billetera Disponible</p>
+        <h1 style="margin:10px 0; font-size:40px;">${{saldo}} <small style="font-size:16px; color:#3fb950;">USDT</small></h1>
+    </div>
+
+    <div class="card">
+        <h4 style="margin:0 0 15px 0;"><i class="fas fa-bolt" style="color:#e3b341;"></i> Ejecución Automática</h4>
+        <div style="height:150px; background:#010409; border-radius:10px; display:flex; flex-direction:column; align-items:center; justify-content:center; border:1px dashed #30363d;">
+             <span style="color:#58a6ff; font-size:14px;">Conectado a Binance Cloud</span>
+             <small style="color:gray; margin-top:10px;">Escaneando oportunidades...</small>
         </div>
     </div>
-    <script>
-        const btcDisplay = document.getElementById('btc-price');
-        const signalText = document.getElementById('signal-text');
-        const ws = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@ticker');
-        ws.onmessage = (event) => {
-            let data = JSON.parse(event.data);
-            let price = parseFloat(data.c).toFixed(2);
-            let change = parseFloat(data.P).toFixed(2);
-            btcDisplay.innerText = `$${price}`;
-            btcDisplay.className = change >= 0 ? 'up' : 'down';
-            signalText.innerText = change > 0 ? "SEÑAL: COMPRA" : "SEÑAL: VENTA";
-            signalText.style.color = change > 0 ? "#3fb950" : "#f85149";
-        };
-    </script>
+
+    <div class="card">
+        <h4 style="margin:0 0 15px 0;"><i class="fas fa-university"></i> Recargar Fondos</h4>
+        <form action="/notificar" method="POST">
+            <input name="monto" type="number" placeholder="Monto USDT" required>
+            <input name="ref" type="text" placeholder="Referencia de Operación" required>
+            <button type="submit">INFORMAR DEPÓSITO</button>
+        </form>
+        <p style="font-size:10px; color:gray; text-align:center; margin-top:10px;">Toda operación es auditada legalmente.</p>
+    </div>
 </body>
-</html>
-'''
+</html>'''
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
-
