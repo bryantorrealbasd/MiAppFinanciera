@@ -132,17 +132,12 @@ DASHBOARD_HTML = '''
                 {{ 'DESACTIVAR BOT AUTOMÁTICO' if bot_on else 'ACTIVAR OPERACIÓN AUTOMÁTICA' }}
             </button>
         </a>
-        {% if not bot_on and mode == 'REAL' and saldo <= 0 %}
-            <p style="color:#da3633; font-size:11px; text-align:center;">⚠️ Debes recargar saldo para activar en REAL.</p>
-        {% endif %}
-    </div>    <a href="https://t.me/SoportteQuantumBryan" class="btn-soporte-tg" target="_blank">
+            <a href="https://t.me/SoportteQuantumBryan" class="btn-soporte-tg" target="_blank">
         ✈️
     </a>
 </body>
 </html>
 '''
-
-# (Mantener el resto de las rutas igual que antes...)
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
 
