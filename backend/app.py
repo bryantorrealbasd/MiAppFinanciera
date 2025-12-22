@@ -88,6 +88,24 @@ DASHBOARD_HTML = '''
         .btn-bot { width:100%; padding:15px; border-radius:5px; border:none; font-weight:bold; cursor:pointer; margin-top:10px;
                    background: {{ '#da3633' if bot_on else '#238636' }}; color:white; }
         .alert-box { border-left: 4px solid #f2994a; background:#1c160d; padding:10px; margin:15px; font-size:13px; }
+        /* BOTON FLOTANTE SOPORTE */
+        .btn-soporte-tg {
+            position: fixed;
+            bottom: 25px;
+            right: 25px;
+            background: #0088cc;
+            color: white;
+            width: 55px;
+            height: 55px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            z-index: 1000;
+            text-decoration: none;
+        }
     </style>
 </head>
 <body>
@@ -117,7 +135,10 @@ DASHBOARD_HTML = '''
         {% if not bot_on and mode == 'REAL' and saldo <= 0 %}
             <p style="color:#da3633; font-size:11px; text-align:center;">⚠️ Debes recargar saldo para activar en REAL.</p>
         {% endif %}
-    </div>
+    </div>    <a href="https://t.me/SoportteQuantumBryan" class="btn-soporte-tg" target="_blank">
+        ✈️
+    </a>
+
 </body>
 </html>
 '''
