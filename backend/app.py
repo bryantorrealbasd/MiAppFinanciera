@@ -1,13 +1,13 @@
 from flask import Flask, render_template_string, request, session, redirect, url_for
-import os, sqlite3, random
+import os, sqlite3, random, requests
 from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = # --- CONFIGURACIÓN DE TELEGRAM ---
+app.secret_key = 'quantum_ai_pro_2025'
+
 # --- CONFIGURACIÓN SEGURA ---
-import os
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "7656884650:AAEtad5gLWLnb9lEkuas9zfqp1Xaa5iw9RU")
-MI_CHAT_ID = os.environ.get("MI_CHAT_ID", "7111219942")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+MI_CHAT_ID = os.environ.get("MI_CHAT_ID")
 
 
 
