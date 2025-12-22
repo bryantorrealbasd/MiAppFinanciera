@@ -3,7 +3,10 @@ import os, sqlite3, random
 from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = 'quantum_ai_auto_2025'
+app.secret_key = # --- CONFIGURACIÓN DE TELEGRAM ---
+TELEGRAM_TOKEN = "7656884650:AAEtad5gLWLnb9lEkuas9zfqp1Xaa5iw9RU"
+MI_CHAT_ID = "7111219942"
+
 
 TASAS = {'VES': 62.50, 'COP': 4100.0, 'ARS': 1050.0}
 
