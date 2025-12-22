@@ -138,7 +138,6 @@ DASHBOARD_HTML = '''
     </div>    <a href="https://t.me/SoportteQuantumBryan" class="btn-soporte-tg" target="_blank">
         ✈️
     </a>
-
 </body>
 </html>
 '''
