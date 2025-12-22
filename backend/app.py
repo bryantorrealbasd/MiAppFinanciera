@@ -5,7 +5,6 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = 'admin_quantum_secret_2025'
 
-# --- CONFIGURACIÓN DE TASAS ---
 TASAS = {'VES': 62.50, 'COP': 4100.0, 'ARS': 1050.0, 'BRL': 5.20}
 
 def init_db():
@@ -44,15 +43,13 @@ def notificar():
     ref = request.form.get('ref')
     usdt = round(monto / TASAS.get(moneda, 1.0), 2)
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
-    
     conn = sqlite3.connect('datos.db')
     conn.execute("INSERT INTO depositos (usuario, monto, moneda, usdt_equiv, ref, estado, fecha) VALUES (?,?,?,?,?,?,?)",
                  (session['user'], monto, moneda, usdt, ref, 'Pendiente', fecha))
     conn.commit()
     conn.close()
-    return "<h1>Solicitud en revisión. El bot validará su pago.</h1><a href='/'>Volver</a>"
+    return "<h1>Solicitud enviada.</h1><a href='/'>Volver</a>"
 
-# --- SECCIÓN DE ADMINISTRADOR ---
 @app.route('/admin')
 def admin():
     conn = sqlite3.connect('datos.db')
@@ -71,30 +68,35 @@ def aprobar(id):
     conn.close()
     return redirect(url_for('admin'))
 
-# --- INTERFACES ---
-LOGIN_HTML = '''<body style="background:#010409;color:white;text-align:center;padding-top:100px;"><h1>QUANTUM LOGIN</h1><form action="/login" method="POST"><input name="email" type="email" placeholder="Email"><button>ENTRAR</button></form></body>'''
+LOGIN_HTML = '''<body style="background:#010409;color:white;text-align:center;padding:50px;font-family:sans-serif;"><h2>QUANTUM LOGIN</h2><form action="/login" method="POST"><input name="email" type="email" placeholder="Email" style="width:80%;padding:10px;margin-bottom:10px;"><br><button style="width:80%;padding:10px;background:#238636;color:white;border:none;">ENTRAR</button></form></body>'''
 
 DASHBOARD_HTML = '''
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
-        body { background:#010409; color:#c9d1d9; font-family:sans-serif; margin:0; }
-        .grid { display:grid; grid-template-columns: 1fr 350px; height:100vh; }
-        .sidebar { background:#0d1117; padding:20px; border-left:1px solid #30363d; }
+        body { background:#010409; color:#c9d1d9; font-family:sans-serif; margin:0; padding:0; overflow-x:hidden; }
+        .container { display: flex; flex-direction: column; width: 100vw; }
+        .chart-box { width: 100%; height: 300px; background: #000; }
+        .content { padding: 15px; box-sizing: border-box; }
         .card { background:#161b22; border:1px solid #30363d; padding:15px; border-radius:10px; margin-bottom:15px; }
-        input, select { width:100%; padding:10px; margin:10px 0; background:#010409; color:white; border:1px solid #30363d; }
-        button { width:100%; padding:15px; background:#238636; color:white; border:none; font-weight:bold; cursor:pointer; }
+        input, select { width:100%; padding:12px; margin:8px 0; background:#010409; color:white; border:1px solid #30363d; border-radius:5px; box-sizing: border-box; }
+        button { width:100%; padding:15px; background:#238636; color:white; border:none; font-weight:bold; border-radius:5px; cursor:pointer; }
+        h2, h4 { margin: 5px 0; }
     </style>
 </head>
 <body>
-    <div class="grid">
-        <div style="background:#000;">
+    <div class="container">
+        <div class="chart-box">
             <iframe src="https://s.tradingview.com/widgetembed/?symbol=BINANCE:BTCUSDT&theme=dark" style="width:100%; height:100%; border:none;"></iframe>
         </div>
-        <div class="sidebar">
-            <div class="card"><h3>Saldo: ${{saldo}} USDT</h3></div>
+        <div class="content">
+            <div class="card">
+                <small style="color:gray;">BILLETERA</small>
+                <h2>${{saldo}} USDT</h2>
+            </div>
             <div class="card">
                 <h4>DEPÓSITO GLOBAL</h4>
                 <form action="/notificar" method="POST">
@@ -102,9 +104,10 @@ DASHBOARD_HTML = '''
                         <option value="VES">Bolívares (VES)</option>
                         <option value="COP">Pesos (COP)</option>
                         <option value="ARS">Pesos (ARS)</option>
+                        <option value="BRL">Reales (BRL)</option>
                     </select>
                     <input id="monto" name="monto" type="number" placeholder="Monto Local" oninput="calc()" required>
-                    <div style="color:#3fb950">Recibirás: <span id="res">0.00</span> USDT</div>
+                    <div style="color:#3fb950; margin: 5px 0;">Recibirás: <span id="res">0.00</span> USDT</div>
                     <input name="ref" type="text" placeholder="Referencia Bancaria" required>
                     <button type="submit">INFORMAR PAGO</button>
                 </form>
@@ -116,28 +119,14 @@ DASHBOARD_HTML = '''
         function calc() {
             const m = document.getElementById('monto').value;
             const mon = document.getElementById('moneda').value;
-            document.getElementById('res').innerText = (m / t[mon]).toFixed(2);
+            if(m > 0) { document.getElementById('res').innerText = (m / t[mon]).toFixed(2); }
+            else { document.getElementById('res').innerText = "0.00"; }
         }
     </script>
 </body>
 </html>'''
 
-ADMIN_HTML = '''
-<body style="background:#010409; color:white; font-family:sans-serif; padding:20px;">
-    <h2>Panel de Control - Pagos Pendientes</h2>
-    <table border="1" style="width:100%; border-collapse:collapse; background:#0d1117;">
-        <tr>
-            <th>Usuario</th><th>Monto Original</th><th>USDT a Cargar</th><th>Referencia</th><th>Acción</th>
-        </tr>
-        {% for d in depositos %}
-        <tr>
-            <td>{{d[1]}}</td><td>{{d[2]}} {{d[3]}}</td><td>{{d[4]}} USDT</td><td>{{d[5]}}</td>
-            <td><a href="/aprobar/{{d[0]}}" style="color:#3fb950; font-weight:bold;">APROBAR Y CARGAR</a></td>
-        </tr>
-        {% endfor %}
-    </table>
-    <br><a href="/" style="color:gray;">Volver a la Terminal</a>
-</body>'''
+ADMIN_HTML = '''<body style="background:#010409; color:white; font-family:sans-serif; padding:10px;"><h3>Pagos Pendientes</h3><div style="overflow-x:auto;"><table border="1" style="width:100%; border-collapse:collapse; background:#0d1117;"><tr><th>User</th><th>Monto</th><th>USDT</th><th>Acción</th></tr>{% for d in depositos %}<tr><td>{{d[1].split('@')[0]}}</td><td>{{d[2]}}</td><td>{{d[4]}}</td><td><a href="/aprobar/{{d[0]}}" style="color:#3fb950;">Aprobar</a></td></tr>{% endfor %}</table></div><br><a href="/" style="color:gray;">Volver</a></body>'''
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
