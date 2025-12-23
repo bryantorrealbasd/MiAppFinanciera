@@ -1,116 +1,127 @@
 import os
 import sqlite3
+import requests
 from flask import Flask, render_template_string, request, redirect
 
 app = Flask(__name__)
 DB_PATH = os.path.join(os.path.dirname(__file__), 'datos.db')
 
-def get_db_connection():
+# --- CONEXIÓN SEGURA CON TUS DATOS DE RENDER ---
+TOKEN = os.environ.get('TELEGRAM_TOKEN')
+CHAT_ID = os.environ.get('MI_CHAT_ID')
+
+def enviar_alerta(mensaje):
+    if not TOKEN or not CHAT_ID: return
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        requests.post(url, data={"chat_id": CHAT_ID, "text": mensaje}, timeout=5)
+    except: pass
+
+def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
-# Asegurar tablas profesionales
-with get_db_connection() as conn:
-    conn.execute("CREATE TABLE IF NOT EXISTS usuarios (id INTEGER PRIMARY KEY, nombre TEXT, saldo REAL, balance_btc REAL)")
-    if not conn.execute("SELECT * FROM usuarios WHERE nombre = 'Admin'").fetchone():
-        conn.execute("INSERT INTO usuarios (nombre, saldo, balance_btc) VALUES ('Admin', 0.0, 0.0)")
+# Inicialización de tablas profesionales
+with get_db() as conn:
+    conn.execute('CREATE TABLE IF NOT EXISTS usuarios (id INTEGER PRIMARY KEY, saldo_usdt REAL, btc_auto REAL)')
+    conn.execute('CREATE TABLE IF NOT EXISTS pagos (id INTEGER PRIMARY KEY, monto REAL, moneda TEXT, status TEXT, comprobante TEXT)')
+    if not conn.execute("SELECT * FROM usuarios WHERE id = 1").fetchone():
+        conn.execute("INSERT INTO usuarios VALUES (1, 100.0, 0.005)") # Saldo inicial de prueba
     conn.commit()
 
 @app.route('/')
-def home():
-    with get_db_connection() as conn:
-        user = conn.execute("SELECT * FROM usuarios WHERE nombre = 'Admin'").fetchone()
+def dashboard():
+    with get_db() as conn:
+        user = conn.execute("SELECT * FROM usuarios WHERE id = 1").fetchone()
     
-    # INTERFAZ TIPO TRADINGVIEW / BINANCE PRO
-    html_template = f'''
+    # Tasas de cambio dinámicas (Base 1 USDT)
+    tasas = {"VES": 54.50, "COP": 3980.0, "ARS": 980.0, "BRL": 5.10}
+    saldo = user['saldo_usdt']
+    conv = {k: saldo * v for k, v in tasas.items()}
+
+    return render_template_string('''
     <!DOCTYPE html>
     <html lang="es">
     <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Pro Broker | Trading Platform</title>
-        <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+        <meta charset="UTF-8"><title>PRO BROKER GLOBAL</title>
+        <script src="https://s3.tradingview.com/tv.js"></script>
         <style>
-            body {{ background-color: #060606; color: #e1e1e1; font-family: 'Roboto', sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; }}
-            header {{ background: #121212; padding: 10px 20px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }}
-            .logo {{ color: #f3ba2f; font-weight: bold; font-size: 1.2rem; }}
-            .main-container {{ display: flex; flex: 1; overflow: hidden; }}
-            .sidebar {{ width: 300px; background: #121212; border-right: 1px solid #333; padding: 20px; display: flex; flex-direction: column; }}
-            #chart-container {{ flex: 1; background: #000; }}
-            .balance-card {{ background: #1e1e1e; border-radius: 10px; padding: 15px; margin-bottom: 20px; border-left: 4px solid #f3ba2f; }}
-            .balance-card h3 {{ font-size: 0.8rem; color: #848e9c; margin: 0; }}
-            .balance-amount {{ font-size: 1.8rem; font-weight: bold; margin: 5px 0; color: #fff; }}
-            .trading-buttons {{ display: flex; gap: 10px; }}
-            .btn {{ flex: 1; padding: 12px; border-radius: 5px; border: none; font-weight: bold; cursor: pointer; }}
-            .btn-buy {{ background: #2ebd85; color: white; }}
-            .btn-sell {{ background: #f6465d; color: white; }}
+            body { background: #060606; color: white; font-family: sans-serif; margin: 0; }
+            .main { display: flex; height: 100vh; }
+            .sidebar { width: 350px; background: #121212; padding: 20px; border-right: 1px solid #333; overflow-y: auto; }
+            .card { background: #1e1e1e; padding: 15px; border-radius: 12px; margin-bottom: 15px; border-left: 4px solid #f3ba2f; }
+            .currency { display: flex; justify-content: space-between; font-size: 0.85rem; margin: 5px 0; color: #848e9c; }
+            .btn-buy { background: #2ebd85; color: white; width: 100%; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+            #tv_chart { flex: 1; }
         </style>
     </head>
     <body>
-        <header>
-            <div class="logo">PRO BROKER ADVANCED</div>
-            <div>Admin: <span style="color:#f3ba2f">Online</span></div>
-        </header>
-        <div class="main-container">
+        <div class="main">
             <div class="sidebar">
-                <div class="balance-card">
-                    <h3>SALDO TOTAL ESTIMADO</h3>
-                    <div class="balance-amount">${user['saldo']:,.2f}</div>
-                    <span style="color:#848e9c; font-size:0.8rem">≈ {user['balance_btc']} BTC</span>
+                <h2 style="color:#f3ba2f; margin-bottom:25px;">BROKER ADVANCED</h2>
+                <div class="card">
+                    <small style="color:#848e9c;">SALDO TOTAL (USDT)</small>
+                    <div style="font-size: 2rem; font-weight: bold;">$ {{ "%.2f"|format(saldo) }}</div>
+                    <hr style="border:0.1px solid #333; margin:15px 0;">
+                    <div class="currency"><span>Pesos Col (COP)</span><span style="color:white;">{{ "{:,.0f}".format(conv['COP']) }}</span></div>
+                    <div class="currency"><span>Pesos Arg (ARS)</span><span style="color:white;">{{ "{:,.0f}".format(conv['ARS']) }}</span></div>
+                    <div class="currency"><span>Real Bra (BRL)</span><span style="color:white;">{{ "{:,.2f}".format(conv['BRL']) }}</span></div>
+                    <div class="currency"><span>Bolívares (VES)</span><span style="color:white;">{{ "{:,.2f}".format(conv['VES']) }}</span></div>
                 </div>
-                <div class="trading-buttons">
-                    <button class="btn btn-buy">COMPRAR</button>
-                    <button class="btn btn-sell">VENDER</button>
+                <div class="card" style="border-left-color: #2ebd85;">
+                    <h4 style="margin:0;">AUTO-TRADING BOT</h4>
+                    <p style="font-size:0.8rem;">Operando con: <b style="color:white;">{{ btc_auto }} BTC</b></p>
                 </div>
-                <div style="margin-top:20px; font-size:0.8rem; color:#444;">
-                    <a href="/admin_panel" style="color:#444; text-decoration:none;">Acceso Interno</a>
-                </div>
+                <button class="btn-buy" onclick="location.href='/admin_panel'">ADMINISTRAR PAGOS</button>
             </div>
-            <div id="chart-container">
-                <div id="tradingview_widget"></div>
-            </div>
+            <div id="tv_chart"></div>
         </div>
         <script>
-            new TradingView.widget({{
-                "autosize": true,
-                "symbol": "BINANCE:BTCUSDT",
-                "interval": "D",
-                "timezone": "Etc/UTC",
-                "theme": "dark",
-                "style": "1",
-                "locale": "es",
-                "toolbar_bg": "#f1f3f6",
-                "enable_publishing": false,
-                "hide_side_toolbar": false,
-                "allow_symbol_change": true,
-                "container_id": "tradingview_widget"
-            }});
+            new TradingView.widget({"autosize": true, "symbol": "BINANCE:BTCUSDT", "interval": "1", "theme": "dark", "container_id": "tv_chart", "locale": "es"});
         </script>
     </body>
     </html>
-    '''
-    return render_template_string(html_template)
+    ''', saldo=saldo, conv=conv, btc_auto=user['btc_auto'])
 
 @app.route('/admin_panel', methods=['GET', 'POST'])
 def admin():
+    with get_db() as conn:
+        pagos = conn.execute("SELECT * FROM pagos WHERE status = 'PENDIENTE'").fetchall()
+
     if request.method == 'POST':
-        nuevo_saldo = request.form.get('saldo')
-        nuevo_btc = request.form.get('btc')
-        with get_db_connection() as conn:
-            conn.execute("UPDATE usuarios SET saldo = ?, balance_btc = ? WHERE nombre = 'Admin'", (nuevo_saldo, nuevo_btc))
-            conn.commit()
-        return redirect('/')
-    return '''
-    <body style="background:#111; color:#fff; padding:50px; font-family:sans-serif;">
-        <h2>ADMIN - AJUSTE DE CUENTAS</h2>
-        <form method="POST">
-            <p>Saldo USDT: <input type="number" step="0.01" name="saldo" style="padding:10px;"></p>
-            <p>Saldo BTC: <input type="number" step="0.00000001" name="btc" style="padding:10px;"></p>
-            <button type="submit" style="padding:10px; background:#f3ba2f; border:none; cursor:pointer;">ACTUALIZAR BROKER</button>
-        </form>
-    </body>
-    '''
+        accion = request.form.get('accion')
+        if accion == "validar":
+            p_id = request.form.get('p_id')
+            monto = float(request.form.get('monto'))
+            with get_db() as conn:
+                conn.execute("UPDATE pagos SET status = 'REAL' WHERE id = ?", (p_id,))
+                conn.execute("UPDATE usuarios SET saldo_usdt = saldo_usdt + ? WHERE id = 1", (monto,))
+                conn.commit()
+            enviar_alerta(f"✅ PAGO APROBADO: +{monto} USDT añadidos al balance.")
+        return redirect('/admin_panel')
+
+    return render_template_string('''
+        <body style="background:#000; color:#fff; padding:30px; font-family:sans-serif;">
+            <h2>ADMIN: VERIFICACIÓN DE PAGOS</h2>
+            <div style="border:1px solid #333; padding:20px; border-radius:10px;">
+                {% for p in pagos %}
+                    <div style="background:#111; padding:15px; margin-bottom:10px; border-radius:5px;">
+                        <p>ID: {{ p.id }} | Monto: {{ p.monto }} USDT</p>
+                        <form method="POST">
+                            <input type="hidden" name="accion" value="validar">
+                            <input type="hidden" name="p_id" value="{{ p.id }}">
+                            <input type="hidden" name="monto" value="{{ p.monto }}">
+                            <button type="submit" style="background:#2ebd85; color:white; border:none; padding:10px; cursor:pointer;">ES PAGO REAL (ACREDITAR)</button>
+                        </form>
+                    </div>
+                {% else %}
+                    <p style="color:#444;">No hay pagos esperando validación.</p>
+                {% endfor %}
+            </div>
+            <br><a href="/" style="color:#f3ba2f;">Volver al Dashboard</a>
+        </body>
+    ''', pagos=pagos)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
